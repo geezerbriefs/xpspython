@@ -1,0 +1,50 @@
+// first test gro program
+
+include gro
+
+set ("dt", 0.1);
+
+transcribe := 0.85;
+mrna_deg := 0.2;
+translate := 2.0;
+prot_deg := 0.01;
+
+program p() := {
+
+  mrna := 0;
+  prot := 0;
+
+  rate( transcribe * volume ) : {mrna := mrna + 1};
+  rate( mrna_deg * mrna ) : {mrna := mrna - 1};
+  rate( translate * mrna ) : {prot := prot + 1};
+  rate( prot_deg * prot ) : {prot := prot - 1};
+
+};
+
+
+program report_save(period) := {
+
+  t_tot := 0;
+  t_per := 0;
+
+  needs mrna;
+  needs prot;
+
+  fp := fopen ( "C:/Users/geeze/Desktop/output.csv" , "w");
+
+  //update the total time and and the period tracking time
+  true : { t_tot := t_tot + 1, t_per := t_per + 1 };
+
+  //look at cell 0 at every period time
+  t_per > period : {
+    //print("cell ", id, " has ", mrna, " mrna's and ", prot, " proteins at time ", t_tot);
+    fprint( fp, id, ", ", t_tot, ", ", mrna, ", ", prot, ", ", volume, "\n" );
+    t_per := 0;
+  };
+};
+
+//compose the two programs you wrote and share mrna and protein so they will get degraded
+program q() := p() + report_save(10.0) sharing mrna, prot;
+
+
+ecoli ( [x:=10, y:=0], program q() );
