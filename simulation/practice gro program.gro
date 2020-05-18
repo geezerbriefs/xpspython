@@ -2,49 +2,156 @@
 
 include gro
 
-set ("dt", 0.1);
+// global variables for simulation and visualization
+set ("dt", 0.01);
+//set ("gfp_saturation_min", 0.0);
+//set ("gfp_saturation_max", 1100.0);
 
+// create a signal
+ahl := signal(5, 0.1); // diffusion rate, degradation rate
+
+// global parameters for gene expression
 transcribe := 0.85;
 mrna_deg := 0.2;
 translate := 2.0;
 prot_deg := 0.01;
 
+// synthase ahl production rate. This is to set how frequently any synthase makes ahl
+synthase_rate := 1;
+
+// sequestration rate global parameter
+seq_rate := 10; //should be high since affinity of sequestration is high
+seq_unbind_rate := 0.001; // should be low for same reason
+
+// define hill function
+fun hill v k x . v * x / ( k + x );
+
+// inducer binding hill function parameters. this inducer will activate ahl synthase
+v_rate := 1.0;
+k := 10.0;
+ind := 0.0;
+ind2 := 0.0;
+
 program p() := {
+///////////////////////////// AHL SIGNAL PRODUCTION //////////////////////////////////////////
+  // make ahl synthase
+  syn_mrna := 0;
+  syn_prot := 0;
 
-  mrna := 0;
-  prot := 0;
+  // standard set of tx tl reactions for ahl synthase
+  rate( transcribe * volume * hill v_rate k ind ) : {syn_mrna := syn_mrna + 1};
+  rate( mrna_deg * syn_mrna ) : {syn_mrna := syn_mrna - 1};
+  rate( translate * syn_mrna ) : {syn_prot := syn_prot + 1};
+  rate( prot_deg * syn_prot ) : {syn_prot := syn_prot - 1};
 
-  rate( transcribe * volume ) : {mrna := mrna + 1};
-  rate( mrna_deg * mrna ) : {mrna := mrna - 1};
-  rate( translate * mrna ) : {prot := prot + 1};
-  rate( prot_deg * prot ) : {prot := prot - 1};
+  // release ahl. propensity just scales linearly with number of synthase proteins so its more frequent when there are more
+  // the idea is that the amount of ahl released is an unknown variable that could change, but the frequency with which it
+  // is released is just proportional to how many there are.
+  rate( synthase_rate * syn_prot ) : { emit_signal(ahl, 0.1) }; //second arg is amount to emit per synthase protein action
+
+
+///////////////////////////// SIGNAL SENSING //////////////////////////////////////////
+  // sense signal concentration
+  ahl_conc := 0; //initialize this
+  true : { ahl_conc := get_signal(ahl) }
+
+
+///////////////////////////// TOXIN PRODUCTION //////////////////////////////////////////
+  // make protein in response to ahl
+  tox_mrna := 0;
+  tox_prot := 0;
+
+  gfp := 0; // gfp is stand in protein for now so its visible
+  true : { gfp := tox_prot }; //make gfp same as tox prot so you can see if its working
+
+  rate( transcribe * volume * hill v_rate k ahl_conc ) : {tox_mrna := tox_mrna + 1}; // i assume volume param here is to mimic genome/dna expansion with growth
+  rate( mrna_deg * tox_mrna ) : {tox_mrna := tox_mrna - 1};
+  rate( translate * tox_mrna ) : {tox_prot := tox_prot + 1};
+  rate( prot_deg * tox_prot ) : {tox_prot := tox_prot - 1};
+
+
+///////////////////////////// SEQUESTRATION //////////////////////////////////////////
+  // sequester ccdB with ccdA in response to inducer
+  seq_mrna := 0.0;
+  seq_prot := 0.0;
+
+  // make sequestration protein
+  rate( transcribe * volume * hill v_rate k ind2 ) : {seq_mrna := seq_mrna + 1}; // i assume volume param here is to mimic genome/dna expansion with growth
+  rate( mrna_deg * seq_mrna ) : {seq_mrna := seq_mrna - 1};
+  rate( translate * seq_mrna ) : {seq_prot := seq_prot + 1};
+  rate( prot_deg * seq_prot ) : {seq_prot := seq_prot - 1};
+
+  // initialize sequestered toxin complex
+  seq_complex := 0;
+  rate( seq_rate * tox_prot * seq_prot ) : { seq_prot := seq_prot - 1, tox_prot := tox_prot - 1, seq_complex := seq_complex + 1 };
+  rate( seq_unbind_rate * seq_complex ) : { seq_prot := seq_prot + 1, tox_prot := tox_prot + 1, seq_complex := seq_complex - 1 };
+  rate( prot_deg * seq_complex ) : { seq_complex := seq_complex - 1 };
+
+
+///////////////////////////// DEATH BY TOXIN //////////////////////////////////////////
+  // die if tox_prot is above some threshold. The threshold is set by the potency of ccdB protein
+  ccdb_thresh := 82; // value is currently arbitrary
+
+  tox_prot > ccdb_thresh : { die() };
+
 
 };
 
 
 program report_save(period) := {
-
+  // track total time
   t_tot := 0;
-  t_per := 0;
+  // track some other times for different reporting periods
+  t_per1 := 0;
+  t_per2 := 0;
 
-  needs mrna;
-  needs prot;
+  // say what this function needs from the shared variable pool
+  needs syn_mrna;
+  needs syn_prot;
+  needs ahl_conc;
+  needs tox_mrna;
+  needs tox_prot;
+  needs seq_mrna;
+  needs seq_prot;
+  needs seq_complex;
 
+  // use built in function to create a file you will write to
   fp := fopen ( "C:/Users/geeze/Desktop/output.csv" , "w");
 
-  //update the total time and and the period tracking time
-  true : { t_tot := t_tot + 1, t_per := t_per + 1 };
+  // update the total time and and the period tracking time. Why aren't these degraded since they're not in records?
+  // because they're not part of the shared variables when the functions are composed
+  true : { t_tot := t_tot + 1, t_per1 := t_per1 + 1, t_per2 := t_per2 + 1 };
 
-  //look at cell 0 at every period time
-  t_per > period : {
-    //print("cell ", id, " has ", mrna, " mrna's and ", prot, " proteins at time ", t_tot);
-    fprint( fp, id, ", ", t_tot, ", ", mrna, ", ", prot, ", ", volume, "\n" );
-    t_per := 0;
+  //print some stuff I want to know about
+  t_per2 > period*5 & selected : {
+    print("time", t_tot, "syn mrna:", syn_mrna, " syn prot:", syn_prot,
+          " tox mrna:", tox_mrna, " tox_prot:", tox_prot, " seq mrna:", seq_mrna, " seq prot:", seq_prot, " seq complex:", seq_complex);
+    t_per2 := 0;
+  };
+
+  //save the data
+  t_per1 > period : {
+    fprint( fp, id, ",", syn_mrna, ",", syn_prot, ",", tox_mrna, ",", tox_prot, ",", seq_mrna, ",", seq_prot, ",", seq_complex, ",",
+          ahl_conc, ",", volume,"\n" );
+    t_per1 := 0;
   };
 };
 
+// global control function for setting variables at time etc
+program main() := {
+
+  t := 0;
+  true : {
+    // no need to hide this in a record since this doesn't go into a cell and get degraded
+    t := t + dt;
+    clear_messages ( 2 );
+    message ( 2, "ind1 is " <> tostring(ind) <> ", ind2 is " <> tostring(ind2) );
+  };
+  t > 40 : { ind := 100, ind2 := 1 }; // ind is for ahl synthase that feeds back to ccdB toxin. ind2 is for ccdb sequestration
+};
+
 //compose the two programs you wrote and share mrna and protein so they will get degraded
-program q() := p() + report_save(10.0) sharing mrna, prot;
+program q() := p() + report_save(10.0) sharing syn_mrna, syn_prot, tox_mrna, tox_prot, seq_mrna, seq_prot, seq_complex, ahl_conc, gfp;
 
 
-ecoli ( [x:=10, y:=0], program q() );
+ecoli ( [x:=0, y:=0, theta:=1], program q() );
