@@ -72,8 +72,8 @@ program p() := {
 
 ///////////////////////////// SEQUESTRATION //////////////////////////////////////////
   // sequester ccdB with ccdA in response to inducer
-  seq_mrna := 0.0;
-  seq_prot := 0.0;
+  seq_mrna := 0;
+  seq_prot := 0;
 
   // make sequestration protein
   rate( transcribe * volume * hill v_rate k ind2 ) : {seq_mrna := seq_mrna + 1}; // i assume volume param here is to mimic genome/dna expansion with growth
@@ -120,7 +120,7 @@ program report_save(period) := {
 
   // update the total time and and the period tracking time. Why aren't these degraded since they're not in records?
   // because they're not part of the shared variables when the functions are composed
-  true : { t_tot := t_tot + 1, t_per1 := t_per1 + 1, t_per2 := t_per2 + 1 };
+  true : { t_tot := t_tot + dt, t_per1 := t_per1 + 1, t_per2 := t_per2 + 1 };
 
   //print some stuff I want to know about
   t_per2 > period*5 & selected : {
@@ -131,7 +131,7 @@ program report_save(period) := {
 
   //save the data
   t_per1 > period : {
-    fprint( fp, id, ",", syn_mrna, ",", syn_prot, ",", tox_mrna, ",", tox_prot, ",", seq_mrna, ",", seq_prot, ",", seq_complex, ",",
+    fprint( fp, id, ",", t_tot, ",", syn_mrna, ",", syn_prot, ",", tox_mrna, ",", tox_prot, ",", seq_mrna, ",", seq_prot, ",", seq_complex, ",",
           ahl_conc, ",", volume,"\n" );
     t_per1 := 0;
   };
