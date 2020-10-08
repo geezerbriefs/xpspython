@@ -147,7 +147,7 @@ program main() := {
     clear_messages ( 2 );
     message ( 2, "ind1 is " <> tostring(ind) <> ", ind2 is " <> tostring(ind2) );
   };
-  t > 40 : { ind := 100, ind2 := 1 }; // ind is for ahl synthase that feeds back to ccdB toxin. ind2 is for ccdb sequestration
+  t > 40 : { ind := 0.3, ind2 := 1 }; // ind is for ahl synthase that feeds back to ccdB toxin. ind2 is for ccdb sequestration
 };
 
 //compose the two programs you wrote and share mrna and protein so they will get degraded
